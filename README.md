@@ -4,21 +4,33 @@
 ### Why
 [Watch](https://www.youtube.com/watch?v=JjItsfqFIdo) or [Read](https://tokio.rs/blog/2019-08-tracing/)
 
+### Intention of this crate
+This crate is designed ot be a place to experiment with ideas around
+tracing and structured logging. This crate will probably never stabilize.
+Instead it is my hope to feed any good ideas back into the underlying
+dependencies.
+
 ### Usage
 There are a couple of ways to use structured logging.
 #### Console and filter
 If you want to try and filter in on an issue it might be easiest to simply log to the console and filter on what you want.
 Here's an example command:
 ```bash
-CUSTOM_FILTER='core[a{something="foo"}]=debug' holochain --structured Log
+RUST_LOG='core[a{something="foo"}]=debug' my_bin
 ```
 Or a more simple version using the default `Log`:
 ```bash
-RUST_LOG=trace holochain
+RUST_LOG=trace my_bin
 ```
+##### Types of tracing
+There are many types of tracing exposed by this crate.
+The [Output] type is designed to be used with something like [structopt](https://docs.rs/structopt/0.3.20/structopt/)
+so you can easily set which type you want with a command line arg.
+You could also use an environment variable.
+The [Output] variant is passing into the [init_fmt] function on start up.
 ##### Filtering
 ```bash
-CUSTOM_FILTER='core[a{something="foo"}]=debug'
+RUST_LOG='core[a{something="foo"}]=debug'
 ```
 Here we are saying show me all the events that are:
 - In the `core` module
@@ -29,7 +41,7 @@ Here we are saying show me all the events that are:
 Most of these options are optional.
 They can be combined like:
 ```bash
-CUSTOM_FILTER='[{}]=error, [{something}]=debug'
+RUST_LOG='[{}]=error,[{something}]=debug'
 ```
 > The above means show me errors from anywhere but also any event or span with the field something that's at least debug.
 
@@ -57,7 +69,7 @@ Some useful tools for formatting and using the json data.
 
 A sample workflow:
 ```bash
-CUSTOM_FILTER='core[{}]=debug' holochain --structured Json > log.json
+RUST_LOG='core[{}]=debug' my_bin --structured Json > log.json
 cat out.json | jq '. | {time: .time, name: .name, message: .fields.message, file: .file, line: .line, fields: .fields, spans: .spans}' | json2csv -o log.csv
 tad log.csv
 ```
