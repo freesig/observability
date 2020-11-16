@@ -3,6 +3,10 @@ name = "observability"
 version = "0.1.0"
 authors = ["freesig <tom.gowan@holo.host>"]
 edition = "2018"
+description = "Experimental tracing ideas"
+readme = "README.md"
+license = "MIT"
+license-file = "LICENSE"
 
 [features]
 default = ["opentelemetry-on"]
@@ -15,7 +19,7 @@ chrono = "0.4.6"
 derive_more = "0.99.3"
 inferno = "0.10.0"
 serde_json = { version = "1.0.51", features = [ "preserve_order" ] }
-thiserror = "1.0.10"
+thiserror = "1.0.22"
 tracing = "0.1.21"
 tracing-core = "0.1.17"
 tracing-serde = "0.1.2"
