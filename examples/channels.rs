@@ -21,6 +21,8 @@ impl MyChannel {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     observability::test_run_open().ok();
+    span_context!();
+    span_context!(current, Level::DEBUG);
     let (tx1, rx2) = mpsc::channel(10);
     let (tx2, rx1) = mpsc::channel(10);
     let c1 = MyChannel::new(tx1.clone(), rx1);

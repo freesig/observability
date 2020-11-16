@@ -3,21 +3,33 @@
 //! ## Why
 //! [Watch](https://www.youtube.com/watch?v=JjItsfqFIdo) or [Read](https://tokio.rs/blog/2019-08-tracing/)
 //!
+//! ## Intention of this crate
+//! This crate is designed ot be a place to experiment with ideas around
+//! tracing and structured logging. This crate will probably never stabilize.
+//! Instead it is my hope to feed any good ideas back into the underlying
+//! dependencies.
+//!
 //! ## Usage
 //! There are a couple of ways to use structured logging.
 //! ### Console and filter
 //! If you want to try and filter in on an issue it might be easiest to simply log to the console and filter on what you want.
 //! Here's an example command:
 //! ```bash
-//! CUSTOM_FILTER='core[a{something="foo"}]=debug' holochain --structured Log
+//! RUST_LOG='core[a{something="foo"}]=debug' my_bin
 //! ```
 //! Or a more simple version using the default `Log`:
 //! ```bash
-//! RUST_LOG=trace holochain
+//! RUST_LOG=trace my_bin
 //! ```
+//! #### Types of tracing
+//! There are many types of tracing exposed by this crate.
+//! The [Output] type is designed to be used with something like [structopt](https://docs.rs/structopt/0.3.20/structopt/)
+//! so you can easily set which type you want with a command line arg.
+//! You could also use an environment variable.
+//! The [Output] variant is passing into the [init_fmt] function on start up.
 //! #### Filtering
 //! ```bash
-//! CUSTOM_FILTER='core[a{something="foo"}]=debug'
+//! RUST_LOG='core[a{something="foo"}]=debug'
 //! ```
 //! Here we are saying show me all the events that are:
 //! - In the `core` module
@@ -28,7 +40,7 @@
 //! Most of these options are optional.
 //! They can be combined like:
 //! ```bash
-//! CUSTOM_FILTER='[{}]=error, [{something}]=debug'
+//! RUST_LOG='[{}]=error,[{something}]=debug'
 //! ```
 //! > The above means show me errors from anywhere but also any event or span with the field something that's at least debug.
 //!
@@ -56,7 +68,7 @@
 //!
 //! A sample workflow:
 //! ```bash
-//! CUSTOM_FILTER='core[{}]=debug' holochain --structured Json > log.json
+//! RUST_LOG='core[{}]=debug' my_bin --structured Json > log.json
 //! cat out.json | jq '. | {time: .time, name: .name, message: .fields.message, file: .file, line: .line, fields: .fields, spans: .spans}' | json2csv -o log.csv
 //! tad log.csv
 //! ```
@@ -82,7 +94,7 @@ mod open;
 pub use open::channel;
 #[cfg(feature = "opentelemetry-on")]
 pub use open::should_run;
-pub use open::{display_context, Context, MsgWrap, OpenSpanExt};
+pub use open::{Config, Context, MsgWrap, OpenSpanExt};
 
 pub use tracing;
 
@@ -136,21 +148,16 @@ impl FromStr for Output {
 /// RUST_LOG or CUSTOM_FILTER must be set or
 /// this is a no-op
 pub fn test_run() -> Result<(), errors::TracingError> {
-    if let (None, None) = (
-        std::env::var_os("RUST_LOG"),
-        std::env::var_os("CUSTOM_FILTER"),
-    ) {
+    if std::env::var_os("RUST_LOG").is_none() {
         return Ok(());
     }
     init_fmt(Output::Log)
 }
 
-/// TODO
+/// Run tracing in a test that uses open telemetry to
+/// send span contexts across process and thread boundaries.
 pub fn test_run_open() -> Result<(), errors::TracingError> {
-    if let (None, None) = (
-        std::env::var_os("RUST_LOG"),
-        std::env::var_os("CUSTOM_FILTER"),
-    ) {
+    if std::env::var_os("RUST_LOG").is_none() {
         return Ok(());
     }
     init_fmt(Output::OpenTel)
@@ -158,10 +165,7 @@ pub fn test_run_open() -> Result<(), errors::TracingError> {
 
 /// Same as test_run but with timed spans
 pub fn test_run_timed() -> Result<(), errors::TracingError> {
-    if let (None, None) = (
-        std::env::var_os("RUST_LOG"),
-        std::env::var_os("CUSTOM_FILTER"),
-    ) {
+    if std::env::var_os("RUST_LOG").is_none() {
         return Ok(());
     }
     init_fmt(Output::LogTimed)
@@ -169,10 +173,7 @@ pub fn test_run_timed() -> Result<(), errors::TracingError> {
 
 /// Same as test_run_timed but saves as json
 pub fn test_run_timed_json() -> Result<(), errors::TracingError> {
-    if let (None, None) = (
-        std::env::var_os("RUST_LOG"),
-        std::env::var_os("CUSTOM_FILTER"),
-    ) {
+    if std::env::var_os("RUST_LOG").is_none() {
         return Ok(());
     }
     init_fmt(Output::JsonTimed)
@@ -186,10 +187,7 @@ pub fn test_run_timed_json() -> Result<(), errors::TracingError> {
 /// `2>| inferno-flamegraph > flamegraph_test_ice_(date +'%d-%m-%y-%X').svg`
 /// And run with `cargo test --quiet`
 pub fn test_run_timed_flame(path: Option<&str>) -> Result<Option<impl Drop>, errors::TracingError> {
-    if let (None, None) = (
-        std::env::var_os("RUST_LOG"),
-        std::env::var_os("CUSTOM_FILTER"),
-    ) {
+    if std::env::var_os("RUST_LOG").is_none() {
         return Ok(None);
     }
     init_fmt(Output::FlameTimed)?;
@@ -209,10 +207,7 @@ pub fn test_run_timed_flame(path: Option<&str>) -> Result<Option<impl Drop>, err
 /// `2>| inferno-flamegraph -c blue > flamegraph_test_ice_(date +'%d-%m-%y-%X').svg`
 /// And run with `cargo test --quiet`
 pub fn test_run_timed_ice(path: Option<&str>) -> Result<Option<impl Drop>, errors::TracingError> {
-    if let (None, None) = (
-        std::env::var_os("RUST_LOG"),
-        std::env::var_os("CUSTOM_FILTER"),
-    ) {
+    if std::env::var_os("RUST_LOG").is_none() {
         return Ok(None);
     }
     init_fmt(Output::IceTimed)?;
@@ -306,6 +301,7 @@ pub fn init_fmt(output: Output) -> Result<(), errors::TracingError> {
                 use opentelemetry::api::Provider;
                 use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
                 OPEN_ON.store(true, std::sync::atomic::Ordering::SeqCst);
+                open::init();
                 let tracer = opentelemetry::sdk::Provider::default().get_tracer("component_name");
                 let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
                 finish(

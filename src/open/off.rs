@@ -1,5 +1,5 @@
 use super::*;
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Context;
 
 #[derive(Debug, Clone)]
@@ -25,15 +25,23 @@ impl OpenSpanExt for tracing::Span {
         Context
     }
 
+    fn get_current_bytes() -> Vec<u8> {
+        Vec::with_capacity(0)
+    }
+
     fn set_context(&self, _: Context) {}
 
     fn set_current_context(_: Context) {}
+    fn set_current_bytes(_bytes: Vec<u8>) {}
 
     fn display_context(&self) -> String {
         String::with_capacity(0)
     }
 }
 
-pub fn display_context(_: &Context) -> String {
-    String::with_capacity(0)
+impl std::fmt::Display for Context {
+    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Ok(())
+    }
 }
+pub struct Config;
