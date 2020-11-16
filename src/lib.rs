@@ -65,7 +65,6 @@ use tracing::{Event, Subscriber};
 use tracing_subscriber::{
     filter::EnvFilter,
     fmt::{format::FmtSpan, time::ChronoUtc, FmtContext},
-    prelude::__tracing_subscriber_SubscriberExt,
     registry::LookupSpan,
     FmtSubscriber,
 };
@@ -79,9 +78,12 @@ mod flames;
 mod fmt;
 mod open;
 
-#[cfg(feature = "channels")]
+#[cfg(all(feature = "opentelemetry-on", feature = "channels"))]
 pub use open::channel;
+#[cfg(feature = "opentelemetry-on")]
+pub use open::should_run;
 pub use open::{display_context, Context, MsgWrap, OpenSpanExt};
+
 pub use tracing;
 
 #[derive(Debug, Clone)]
@@ -298,16 +300,26 @@ pub fn init_fmt(output: Output) -> Result<(), errors::TracingError> {
             finish(subscriber.with_env_filter(filter).finish())
         }
         Output::OpenTel => {
-            use opentelemetry::api::Provider;
-            let tracer = opentelemetry::sdk::Provider::default().get_tracer("component_name");
-            let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
-            finish(
-                subscriber
-                    .with_env_filter(filter)
-                    .finish()
-                    .with(telemetry)
-                    .with(open::OpenLayer),
-            )
+            #[cfg(feature = "opentelemetry-on")]
+            {
+                use open::OPEN_ON;
+                use opentelemetry::api::Provider;
+                use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
+                OPEN_ON.store(true, std::sync::atomic::Ordering::SeqCst);
+                let tracer = opentelemetry::sdk::Provider::default().get_tracer("component_name");
+                let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
+                finish(
+                    subscriber
+                        .with_env_filter(filter)
+                        .finish()
+                        .with(telemetry)
+                        .with(open::OpenLayer),
+                )
+            }
+            #[cfg(not(feature = "opentelemetry-on"))]
+            {
+                Ok(())
+            }
         }
         Output::None => Ok(()),
     }

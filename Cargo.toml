@@ -6,7 +6,7 @@ edition = "2018"
 
 [features]
 default = ["opentelemetry-on"]
-opentelemetry-off = []
+# Allows across thread and process tracing
 opentelemetry-on = ["opentelemetry", "tracing-opentelemetry", "holochain_serialized_bytes", "serde", "serde_bytes"]
 channels = ["tokio", "shrinkwraprs"]
 
