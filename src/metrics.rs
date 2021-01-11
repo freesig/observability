@@ -33,15 +33,16 @@ macro_rules! metrics {
             pub(super) const NAMES: [&'static str; NUM] = [$(stringify!($metric)),+];
         }
         impl $name {
-            pub fn count(metric: Self, n: u64) {
+            pub fn count<N: std::convert::TryInto<u64, Error = std::num::TryFromIntError>>(metric: Self, n: N) {
                 if $crate::metrics::__METRICS_ON.load(std::sync::atomic::Ordering::Relaxed) {
+                    let n = n.try_into().expect("Failed to convert metric to u64");
                     let r = Self::count_silent(metric, n);
-                    tracing::debug!(?metric, count = r);
+                    $crate::tracing::debug!(?metric, count = r);
                 }
             }
             pub fn count_silent(metric: Self, n: u64) -> u64 {
                 if $crate::metrics::__METRICS_ON.load(std::sync::atomic::Ordering::Relaxed) {
-                    let mut last = metrics_inner::METRICS[metric as usize].fetch_add(n, std::sync::atomic::Ordering::SeqCst);
+                    let mut last = metrics_inner::METRICS[metric as usize].fetch_add(n, std::sync::atomic::Ordering::Relaxed);
                     last += n;
                     last
                 } else {
@@ -52,8 +53,8 @@ macro_rules! metrics {
                 if $crate::metrics::__METRICS_ON.load(std::sync::atomic::Ordering::Relaxed) {
                     for (i, count) in metrics_inner::METRICS.iter().enumerate() {
                         let metric = metrics_inner::NAMES[i];
-                        let count = count.load(std::sync::atomic::Ordering::SeqCst);
-                        tracing::debug!(%metric, count);
+                        let count = count.load(std::sync::atomic::Ordering::Relaxed);
+                        $crate::tracing::debug!(%metric, count);
                     }
                 }
             }
@@ -64,12 +65,12 @@ macro_rules! metrics {
                     let mut values = String::new();
                     for (i, count) in metrics_inner::METRICS.iter().enumerate() {
                         let metric = metrics_inner::NAMES[i];
-                        let count = count.load(std::sync::atomic::Ordering::SeqCst);
+                        let count = count.load(std::sync::atomic::Ordering::Relaxed);
                         write!(keys, "{},", metric).expect("Failed to write metrics");
                         write!(values, "{},", count).expect("Failed to write metrics");
                     }
                     std::fs::write(path, format!("{}\n{}\n", keys, values)).expect("Failed to write metrics to csv");
-                    tracing::info!(metrics = "Saved csv to", ?path);
+                    $crate::tracing::info!(metrics = "Saved csv to", ?path);
                 }
             }
         }

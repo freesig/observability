@@ -19,7 +19,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     MyMetric::print();
     let mut td = std::env::temp_dir();
     td.push("metrics_csv");
-    std::fs::create_dir(&td).unwrap();
+    std::fs::create_dir(&td).ok();
     td.push("metrics.csv");
     MyMetric::save_csv(&td);
 
