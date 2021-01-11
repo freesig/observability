@@ -16,5 +16,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     MyMetric::count(MyMetric::CounterA, 40);
     MyMetric::count(MyMetric::CounterB, 40);
 
+    MyMetric::print();
+    let mut td = std::env::temp_dir();
+    td.push("metrics_csv");
+    std::fs::create_dir(&td).unwrap();
+    td.push("metrics.csv");
+    MyMetric::save_csv(&td);
+
     Ok(())
 }
