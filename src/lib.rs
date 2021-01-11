@@ -88,6 +88,7 @@ use fmt::*;
 
 mod flames;
 mod fmt;
+pub mod metrics;
 mod open;
 
 #[cfg(all(feature = "opentelemetry-on", feature = "channels"))]
@@ -299,8 +300,8 @@ pub fn init_fmt(output: Output) -> Result<(), errors::TracingError> {
             {
                 use open::OPEN_ON;
                 use opentelemetry::api::Provider;
-                use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
                 OPEN_ON.store(true, std::sync::atomic::Ordering::SeqCst);
+                use tracing_subscriber::prelude::*;
                 open::init();
                 let tracer = opentelemetry::sdk::Provider::default().get_tracer("component_name");
                 let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
