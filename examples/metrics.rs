@@ -11,10 +11,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let span = debug_span!("span a");
     let _g = span.enter();
 
-    debug!(metric = "my_counter", count = 32);
     MyMetric::count(MyMetric::CounterA, 30);
     MyMetric::count(MyMetric::CounterA, 40);
     MyMetric::count(MyMetric::CounterB, 40);
+    MyMetric::count(MyMetric::CounterB, 40u64);
+
+    MyMetric::count_filter(MyMetric::CounterA, 10, "my_filter");
+    MyMetric::count_filter(MyMetric::CounterA, 10, "my_other_filter");
 
     MyMetric::print();
     let mut td = std::env::temp_dir();
