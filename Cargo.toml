@@ -1,6 +1,6 @@
 [package]
 name = "observability"
-version = "0.1.2"
+version = "0.1.3"
 authors = ["freesig <tom.gowan@holo.host>"]
 edition = "2018"
 description = "Experimental tracing ideas"
