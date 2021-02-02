@@ -223,7 +223,10 @@ pub fn test_run_timed_ice(path: Option<&str>) -> Result<Option<impl Drop>, error
 /// This checks RUST_LOG for a filter but doesn't complain if there is none or it doesn't parse.
 /// It then checks for CUSTOM_FILTER which if set will output an error if it doesn't parse.
 pub fn init_fmt(output: Output) -> Result<(), errors::TracingError> {
-    let mut filter = EnvFilter::from_default_env();
+    let mut filter = match std::env::var("RUST_LOG") {
+        Ok(_) => EnvFilter::from_default_env(),
+        Err(_) => EnvFilter::from_default_env().add_directive("[wasm_debug]=debug".parse()?),
+    };
     if std::env::var("CUSTOM_FILTER").is_ok() {
         EnvFilter::try_from_env("CUSTOM_FILTER")
             .map_err(|e| eprintln!("Failed to parse CUSTOM_FILTER {:?}", e))
@@ -346,5 +349,7 @@ pub mod errors {
         SetGlobal(#[from] tracing::subscriber::SetGlobalDefaultError),
         #[error("Failed to setup tracing flame")]
         TracingFlame,
+        #[error(transparent)]
+        BadDirective(#[from] tracing_subscriber::filter::ParseError),
     }
 }
