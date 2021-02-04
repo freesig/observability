@@ -73,6 +73,8 @@
 //! tad log.csv
 //! ```
 
+use deadlock::TimingLayer;
+use tracing::Level;
 use tracing::{Event, Subscriber};
 use tracing_subscriber::{
     filter::EnvFilter,
@@ -86,6 +88,7 @@ use std::{str::FromStr, sync::Once};
 use flames::{toml_path, FlameTimed};
 use fmt::*;
 
+mod deadlock;
 mod flames;
 mod fmt;
 pub mod metrics;
@@ -96,6 +99,8 @@ pub use open::channel;
 #[cfg(feature = "opentelemetry-on")]
 pub use open::should_run;
 pub use open::{Config, Context, MsgWrap, OpenSpanExt};
+
+pub use deadlock::tick_deadlock_catcher;
 
 pub use tracing;
 
@@ -118,6 +123,8 @@ pub enum Output {
     IceTimed,
     /// Opentelemetry tracing
     OpenTel,
+    /// Find deadlocked awaits
+    DeadLock,
     /// No logging to console
     None,
 }
@@ -153,6 +160,13 @@ pub fn test_run() -> Result<(), errors::TracingError> {
         return Ok(());
     }
     init_fmt(Output::Log)
+}
+
+pub fn test_run_dead() -> Result<(), errors::TracingError> {
+    if std::env::var_os("RUST_LOG").is_none() {
+        return Ok(());
+    }
+    init_fmt(Output::DeadLock)
 }
 
 /// Run tracing in a test that uses open telemetry to
@@ -293,6 +307,17 @@ pub fn init_fmt(output: Output) -> Result<(), errors::TracingError> {
                 .with_timer(ChronoUtc::rfc3339())
                 .event_format(fm_ice);
             finish(subscriber.finish())
+        }
+        Output::DeadLock => {
+            use tracing_subscriber::prelude::*;
+            let timing_layer = TimingLayer::new();
+            let subscriber = subscriber
+                .with_max_level(Level::TRACE)
+                // .with_env_filter(filter)
+                .finish()
+                .with(timing_layer)
+                .with(filter);
+            finish(subscriber)
         }
         Output::Compact => {
             let subscriber = subscriber.compact();
