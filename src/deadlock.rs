@@ -19,15 +19,17 @@ pub struct Timing {
     enter: Option<Instant>,
     busy: Duration,
     metadata: &'static Metadata<'static>,
+    parents: String,
 }
 
 impl Timing {
-    fn new(metadata: &'static Metadata<'static>) -> Self {
+    fn new(metadata: &'static Metadata<'static>, parents: String) -> Self {
         Self {
             start: Instant::now(),
             enter: None,
             busy: Duration::default(),
             metadata,
+            parents,
         }
     }
 
@@ -65,18 +67,37 @@ where
         &self,
         attrs: &Attributes<'_>,
         id: &tracing::span::Id,
-        _ctx: tracing_subscriber::layer::Context<'_, S>,
+        ctx: tracing_subscriber::layer::Context<'_, S>,
     ) {
         {
+            let parents = ctx
+                .span(id)
+                .map(|s| {
+                    s.parents()
+                        .map(|p| format!("{}:", p.name()))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            let parents = parents.into_iter().rev().collect::<String>();
             if let Ok(mut t) = self.timings.write() {
-                t.insert(id.clone(), Timing::new(attrs.metadata()));
+                t.insert(id.clone(), Timing::new(attrs.metadata(), parents));
             }
         }
     }
 
-    fn on_enter(&self, id: &tracing::Id, _ctx: tracing_subscriber::layer::Context<'_, S>) {
+    fn on_enter(&self, id: &tracing::Id, ctx: tracing_subscriber::layer::Context<'_, S>) {
+        // let parents = ctx
+        //     .span(id)
+        //     .map(|s| {
+        //         s.parents()
+        //             .map(|p| format!("{}:", p.name()))
+        //             .collect::<Vec<_>>()
+        //     })
+        //     .unwrap_or_default();
+        // let parents = parents.into_iter().rev().collect::<String>();
         if let Ok(mut t) = self.timings.write() {
             if let Some(t) = t.get_mut(id) {
+                // t.parents = parents;
                 t.enter = Some(Instant::now());
             }
         }
@@ -132,19 +153,7 @@ pub fn tick_deadlock_catcher() {
                     .collect::<Vec<_>>();
                 t.sort_by_cached_key(|t| t.1.ice());
                 println!("--- Slow Spans ---");
-                for (id, timing, count) in t.into_iter().rev().take(200) {
-                    let parents = match dispatch
-                        .downcast_ref::<Registry>()
-                        .and_then(|r| r.span(&id))
-                    {
-                        Some(s) => s
-                            .parents()
-                            .map(|p| format!("{}:", p.name()))
-                            .collect::<Vec<_>>(),
-                        None => Vec::with_capacity(0),
-                    };
-                    let parents = parents.into_iter().rev().collect::<String>();
-
+                for (_, timing, count) in t.into_iter().rev().take(200) {
                     let file = match (timing.metadata.file(), timing.metadata.line()) {
                         (Some(f), Some(l)) => format!("{}:{}", f, l),
                         _ => String::new(),
@@ -152,7 +161,7 @@ pub fn tick_deadlock_catcher() {
                     println!(
                         "{} x {} - {}: idle: {:?}, busy {:?}, ice: {:?}, flame: {:?} {}",
                         count,
-                        parents,
+                        timing.parents,
                         timing.metadata.name(),
                         timing.idle(),
                         timing.busy(),
