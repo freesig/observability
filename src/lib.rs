@@ -74,12 +74,11 @@
 //! ```
 
 use deadlock::TimingLayer;
-use tracing::Level;
 use tracing::{Event, Subscriber};
+use tracing_subscriber::Registry;
 use tracing_subscriber::{
     filter::EnvFilter,
     fmt::{format::FmtSpan, time::ChronoUtc, FmtContext},
-    registry::LookupSpan,
     FmtSubscriber,
 };
 
@@ -91,6 +90,7 @@ use fmt::*;
 mod deadlock;
 mod flames;
 mod fmt;
+mod latency;
 pub mod metrics;
 mod open;
 
@@ -101,6 +101,7 @@ pub use open::should_run;
 pub use open::{Config, Context, MsgWrap, OpenSpanExt};
 
 pub use deadlock::tick_deadlock_catcher;
+pub use latency::tick_latency;
 
 pub use tracing;
 
@@ -125,6 +126,8 @@ pub enum Output {
     OpenTel,
     /// Find deadlocked awaits
     DeadLock,
+    /// Find the latency between evens
+    Latency,
     /// No logging to console
     None,
 }
@@ -146,6 +149,8 @@ impl FromStr for Output {
             "FlameTimed" => Ok(Output::FlameTimed),
             "Compact" => Ok(Output::Compact),
             "OpenTel" => Ok(Output::OpenTel),
+            "DeadLock" => Ok(Output::DeadLock),
+            "Latency" => Ok(Output::Latency),
             "None" => Ok(Output::None),
             _ => Err("Could not parse log output type".into()),
         }
@@ -162,6 +167,15 @@ pub fn test_run() -> Result<(), errors::TracingError> {
     init_fmt(Output::Log)
 }
 
+/// Run a test with the deadlock catcher
+pub fn test_run_latency() -> Result<(), errors::TracingError> {
+    if std::env::var_os("RUST_LOG").is_none() {
+        return Ok(());
+    }
+    init_fmt(Output::Latency)
+}
+
+/// Run a test with the deadlock catcher
 pub fn test_run_dead() -> Result<(), errors::TracingError> {
     if std::env::var_os("RUST_LOG").is_none() {
         return Ok(());
@@ -310,14 +324,25 @@ pub fn init_fmt(output: Output) -> Result<(), errors::TracingError> {
         }
         Output::DeadLock => {
             use tracing_subscriber::prelude::*;
-            let timing_layer = TimingLayer::new();
-            let subscriber = subscriber
-                .with_max_level(Level::TRACE)
-                // .with_env_filter(filter)
-                .finish()
-                .with(timing_layer)
-                .with(filter);
+            // let subscriber = tracing_subscriber::fmt::Layer::default()
+            //     .with_writer(std::io::stderr)
+            //     .with_target(true);
+            // let timing_layer = filter.and_then(TimingLayer::new()).and_then(subscriber);
+            let timing_layer = filter.and_then(TimingLayer::new());
+            // let subscriber = subscriber
+            //     .with_max_level(Level::TRACE)
+            //     // .with_env_filter(filter)
+            //     .finish()
+            //     // .with(filter)
+            //     .with(timing_layer);
+            let subscriber = Registry::default().with(timing_layer);
             finish(subscriber)
+        }
+        Output::Latency => {
+            use tracing_timing::{Builder, Histogram};
+            let timing_subscriber = Builder::default()
+                .build(|| Histogram::new_with_bounds(10_000, 1_000_000, 3).unwrap());
+            finish(timing_subscriber)
         }
         Output::Compact => {
             let subscriber = subscriber.compact();
@@ -352,7 +377,8 @@ pub fn init_fmt(output: Output) -> Result<(), errors::TracingError> {
 
 fn finish<S>(subscriber: S) -> Result<(), errors::TracingError>
 where
-    S: Subscriber + Send + Sync + for<'span> LookupSpan<'span>,
+    // S: Subscriber + Send + Sync + for<'span> LookupSpan<'span>,
+    S: Subscriber + Send + Sync,
 {
     let mut result = Ok(());
     INIT.call_once(|| {
