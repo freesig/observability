@@ -118,6 +118,8 @@ pub enum Output {
     IceTimed,
     /// Opentelemetry tracing
     OpenTel,
+    /// Console
+    Console,
     /// No logging to console
     None,
 }
@@ -320,6 +322,11 @@ pub fn init_fmt(output: Output) -> Result<(), errors::TracingError> {
             {
                 Ok(())
             }
+        }
+        Output::Console => {
+            let filter = filter.add_directive("tokio=trace".parse()?);
+            let (layer, server) = console_subscriber::TasksLayer::new();
+            finish(subscriber.with_env_filter(filter).finish().with(layer))
         }
         Output::None => Ok(()),
     }
