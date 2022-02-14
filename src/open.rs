@@ -404,7 +404,7 @@ mod on {
     where
         S: Subscriber + for<'span> LookupSpan<'span>,
     {
-        fn new_span(
+        fn on_new_span(
             &self,
             attrs: &Attributes<'_>,
             id: &tracing::span::Id,
