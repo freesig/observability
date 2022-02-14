@@ -1,0 +1,1 @@
+/home/freesig/holochain/my-shell.nix

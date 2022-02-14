@@ -75,13 +75,18 @@
 
 use tracing::{Event, Subscriber};
 use tracing_subscriber::{
-    filter::EnvFilter,
-    fmt::{format::FmtSpan, time::ChronoUtc, FmtContext},
+    filter::{Directive, EnvFilter},
+    fmt::{
+        format::{DefaultFields, FmtSpan, Format, Full, Writer},
+        time::UtcTime,
+        FmtContext, Formatter,
+    },
     registry::LookupSpan,
+    reload::Handle,
     FmtSubscriber,
 };
 
-use std::{str::FromStr, sync::Once};
+use std::{io::Stderr, str::FromStr, sync::Once};
 
 use flames::{toml_path, FlameTimed};
 use fmt::*;
@@ -93,11 +98,13 @@ mod open;
 
 #[cfg(all(feature = "opentelemetry-on", feature = "channels"))]
 pub use open::channel;
-#[cfg(feature = "opentelemetry-on")]
-pub use open::should_run;
+// #[cfg(feature = "opentelemetry-on")]
+// pub use open::should_run;
 pub use open::{Config, Context, MsgWrap, OpenSpanExt};
-
 pub use tracing;
+
+
+thread_local!(static HANDLE: std::cell::RefCell<Option<Handle<EnvFilter, Formatter<DefaultFields, Format<Full>, fn() -> Stderr>>>>  = std::cell::RefCell::new(None));
 
 #[derive(Debug, Clone)]
 /// Sets the kind of structured logging output you want
@@ -116,10 +123,38 @@ pub enum Output {
     FlameTimed,
     /// Creates a flamegraph from timed spans using idle time
     IceTimed,
-    /// Opentelemetry tracing
-    OpenTel,
+    // /// Opentelemetry tracing
+    // OpenTel,
+    /// Regular logging but can be the filters can be changed at runtime.
+    Dynamic,
     /// No logging to console
     None,
+}
+
+/// A handle to dynamically reload the current filter.
+pub struct DynFilter(
+    Option<Handle<EnvFilter, Formatter<DefaultFields, Format<Full>, fn() -> Stderr>>>,
+    Option<EnvFilter>,
+);
+
+impl DynFilter {
+    /// Reload the current filter by adding a new directive.
+    /// You can overwrite a previous directive to disable it.
+    pub fn reload(&mut self, filter: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let filter: Directive = filter.parse()?;
+        let mut empty_env = self.1.take().unwrap_or_default();
+        let mut empty_option = None;
+        self.0.as_ref().map(|h| {
+            h.modify(|a| {
+                std::mem::swap(a, &mut empty_env);
+                let mut new_env = empty_env.add_directive(filter);
+                std::mem::swap(a, &mut new_env);
+                empty_option = Some(new_env);
+            })
+        });
+        self.1 = empty_option;
+        Ok(())
+    }
 }
 
 /// ParseError is a String
@@ -138,7 +173,7 @@ impl FromStr for Output {
             "LogTimed" => Ok(Output::LogTimed),
             "FlameTimed" => Ok(Output::FlameTimed),
             "Compact" => Ok(Output::Compact),
-            "OpenTel" => Ok(Output::OpenTel),
+            // "OpenTel" => Ok(Output::OpenTel),
             "None" => Ok(Output::None),
             _ => Err("Could not parse log output type".into()),
         }
@@ -155,14 +190,28 @@ pub fn test_run() -> Result<(), errors::TracingError> {
     init_fmt(Output::Log)
 }
 
+/// Run logging in a unit test
+/// RUST_LOG or CUSTOM_FILTER must be set or
+/// this is a no-op
+pub fn dyn_test_run() -> Result<DynFilter, errors::TracingError> {
+    if std::env::var_os("RUST_LOG").is_none() {
+        return Ok(DynFilter(None, None));
+    }
+    init_fmt(Output::Dynamic)?;
+    let handle = HANDLE
+        .with(|h| h.borrow_mut().take())
+        .ok_or(errors::TracingError::DynamicHandle)?;
+    Ok(DynFilter(Some(handle), None))
+}
+
 /// Run tracing in a test that uses open telemetry to
 /// send span contexts across process and thread boundaries.
-pub fn test_run_open() -> Result<(), errors::TracingError> {
-    if std::env::var_os("RUST_LOG").is_none() {
-        return Ok(());
-    }
-    init_fmt(Output::OpenTel)
-}
+// pub fn test_run_open() -> Result<(), errors::TracingError> {
+//     if std::env::var_os("RUST_LOG").is_none() {
+//         return Ok(());
+//     }
+//     init_fmt(Output::OpenTel)
+// }
 
 /// Same as test_run but with timed spans
 pub fn test_run_timed() -> Result<(), errors::TracingError> {
@@ -235,31 +284,22 @@ pub fn init_fmt(output: Output) -> Result<(), errors::TracingError> {
             })
             .ok();
     }
-    let fm: fn(
-        ctx: &FmtContext<'_, _, _>,
-        &mut dyn std::fmt::Write,
-        &Event<'_>,
-    ) -> std::fmt::Result = format_event;
-    let fm_flame: fn(
-        ctx: &FmtContext<'_, _, _>,
-        &mut dyn std::fmt::Write,
-        &Event<'_>,
-    ) -> std::fmt::Result = format_event_flame;
-    let fm_ice: fn(
-        ctx: &FmtContext<'_, _, _>,
-        &mut dyn std::fmt::Write,
-        &Event<'_>,
-    ) -> std::fmt::Result = format_event_ice;
+    let fm: fn(ctx: &FmtContext<'_, _, _>, Writer<'_>, &Event<'_>) -> std::fmt::Result =
+        format_event;
+    let fm_flame: fn(ctx: &FmtContext<'_, _, _>, Writer<'_>, &Event<'_>) -> std::fmt::Result =
+        format_event_flame;
+    let fm_ice: fn(ctx: &FmtContext<'_, _, _>, Writer<'_>, &Event<'_>) -> std::fmt::Result =
+        format_event_ice;
 
     let subscriber = FmtSubscriber::builder()
-        .with_writer(std::io::stderr)
+        .with_writer(std::io::stderr as fn() -> Stderr)
         .with_target(true);
 
     match output {
         Output::Json => {
             let subscriber = subscriber
                 .with_env_filter(filter)
-                .with_timer(ChronoUtc::rfc3339())
+                .with_timer(UtcTime::rfc_3339())
                 .json()
                 .event_format(fm);
             finish(subscriber.finish())
@@ -268,7 +308,7 @@ pub fn init_fmt(output: Output) -> Result<(), errors::TracingError> {
             let subscriber = subscriber
                 .with_span_events(FmtSpan::CLOSE)
                 .with_env_filter(filter)
-                .with_timer(ChronoUtc::rfc3339())
+                .with_timer(UtcTime::rfc_3339())
                 .json()
                 .event_format(fm);
             finish(subscriber.finish())
@@ -282,7 +322,7 @@ pub fn init_fmt(output: Output) -> Result<(), errors::TracingError> {
             let subscriber = subscriber
                 .with_span_events(FmtSpan::CLOSE)
                 .with_env_filter(filter)
-                .with_timer(ChronoUtc::rfc3339())
+                .with_timer(UtcTime::rfc_3339())
                 .event_format(fm_flame);
             finish(subscriber.finish())
         }
@@ -290,7 +330,7 @@ pub fn init_fmt(output: Output) -> Result<(), errors::TracingError> {
             let subscriber = subscriber
                 .with_span_events(FmtSpan::CLOSE)
                 .with_env_filter(filter)
-                .with_timer(ChronoUtc::rfc3339())
+                .with_timer(UtcTime::rfc_3339())
                 .event_format(fm_ice);
             finish(subscriber.finish())
         }
@@ -298,29 +338,37 @@ pub fn init_fmt(output: Output) -> Result<(), errors::TracingError> {
             let subscriber = subscriber.compact();
             finish(subscriber.with_env_filter(filter).finish())
         }
-        Output::OpenTel => {
-            #[cfg(feature = "opentelemetry-on")]
-            {
-                use open::OPEN_ON;
-                use opentelemetry::api::Provider;
-                OPEN_ON.store(true, std::sync::atomic::Ordering::SeqCst);
-                use tracing_subscriber::prelude::*;
-                open::init();
-                let tracer = opentelemetry::sdk::Provider::default().get_tracer("component_name");
-                let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
-                finish(
-                    subscriber
-                        .with_env_filter(filter)
-                        .finish()
-                        .with(telemetry)
-                        .with(open::OpenLayer),
-                )
-            }
-            #[cfg(not(feature = "opentelemetry-on"))]
-            {
-                Ok(())
-            }
+        Output::Dynamic => {
+            let subscriber = subscriber.with_env_filter(filter).with_filter_reloading();
+            let handle = subscriber.reload_handle();
+            HANDLE.with(|f| {
+                *f.borrow_mut() = Some(handle);
+            });
+            finish(subscriber.finish())
         }
+        // Output::OpenTel => {
+        //     #[cfg(feature = "opentelemetry-on")]
+        //     {
+        //         use open::OPEN_ON;
+        //         use opentelemetry::api::Provider;
+        //         OPEN_ON.store(true, std::sync::atomic::Ordering::SeqCst);
+        //         use tracing_subscriber::prelude::*;
+        //         open::init();
+        //         let tracer = opentelemetry::sdk::Provider::default().get_tracer("component_name");
+        //         let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
+        //         finish(
+        //             subscriber
+        //                 .with_env_filter(filter)
+        //                 .finish()
+        //                 .with(telemetry)
+        //                 .with(open::OpenLayer),
+        //         )
+        //     }
+        //     #[cfg(not(feature = "opentelemetry-on"))]
+        //     {
+        //         Ok(())
+        //     }
+        // }
         Output::None => Ok(()),
     }
 }
@@ -349,6 +397,8 @@ pub mod errors {
         SetGlobal(#[from] tracing::subscriber::SetGlobalDefaultError),
         #[error("Failed to setup tracing flame")]
         TracingFlame,
+        #[error("Failed to get the dynamic handle")]
+        DynamicHandle,
         #[error(transparent)]
         BadDirective(#[from] tracing_subscriber::filter::ParseError),
     }

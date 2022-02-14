@@ -4,7 +4,7 @@ use tracing_core::field::Field;
 use tracing_serde::AsSerde;
 use tracing_subscriber::{
     field::Visit,
-    fmt::{FmtContext, FormatFields},
+    fmt::{format::Writer, FmtContext, FormatFields},
     registry::LookupSpan,
 };
 
@@ -36,7 +36,7 @@ impl Visit for EventFieldVisitor {
 // Formatting the events for json
 pub(crate) fn format_event<S, N>(
     ctx: &FmtContext<'_, S, N>,
-    writer: &mut dyn std::fmt::Write,
+    mut writer: Writer<'_>,
     event: &Event<'_>,
 ) -> std::fmt::Result
 where
@@ -75,7 +75,7 @@ where
 // Formatting the events for json
 pub(crate) fn format_event_flame<S, N>(
     ctx: &FmtContext<'_, S, N>,
-    writer: &mut dyn std::fmt::Write,
+    mut writer: Writer<'_>,
     event: &Event<'_>,
 ) -> std::fmt::Result
 where
@@ -97,7 +97,7 @@ where
 // Formatting the events for json
 pub(crate) fn format_event_ice<S, N>(
     ctx: &FmtContext<'_, S, N>,
-    writer: &mut dyn std::fmt::Write,
+    mut writer: Writer<'_>,
     event: &Event<'_>,
 ) -> std::fmt::Result
 where

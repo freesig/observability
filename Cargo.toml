@@ -8,7 +8,7 @@ readme = "README.md"
 license-file = "LICENSE"
 
 [features]
-default = ["opentelemetry-on"]
+default = []
 # Allows across thread and process tracing
 opentelemetry-on = ["opentelemetry", "tracing-opentelemetry", "holochain_serialized_bytes", "serde", "serde_bytes"]
 channels = ["tokio", "shrinkwraprs"]
@@ -19,13 +19,13 @@ derive_more = "0.99.3"
 inferno = "0.10.0"
 serde_json = { version = "1.0.51", features = [ "preserve_order" ] }
 thiserror = "1.0.22"
-tracing = "0.1.21"
-tracing-core = "0.1.17"
-tracing-serde = "0.1.2"
-tracing-subscriber = "0.2.15"
+tracing = "0.1.29"
+tracing-core = "0.1.21"
+tracing-serde = "0.1"
+tracing-subscriber = { version = "0.3", features = ["default", "env-filter", "std", "fmt", "time", "json"] }
 
-opentelemetry = { version = "0.8", default-features = false, features = ["trace", "serialize"], optional = true }
-tracing-opentelemetry = { version = "0.8.0", optional = true }
+opentelemetry = { version = "0.16", default-features = false, features = ["trace", "serialize"], optional = true }
+tracing-opentelemetry = { version = "0.15.0", optional = true }
 holochain_serialized_bytes = {version = "0.0", optional = true }
 serde = { version = "1", optional = true }
 serde_bytes = { version = "0.11", optional = true }
